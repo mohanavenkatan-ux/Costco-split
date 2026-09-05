@@ -1,6 +1,6 @@
 var CACHE_NAME = "warehouse-split-v1";
 var APP_SHELL = [
-  "./warehouse-split.html",
+  "./index.html",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png"

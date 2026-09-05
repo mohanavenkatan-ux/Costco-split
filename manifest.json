@@ -2,7 +2,7 @@
   "name": "Warehouse Split",
   "short_name": "WH Split",
   "description": "Split a warehouse-store receipt among roommates with live totals and settle-up.",
-  "start_url": "./warehouse-split.html",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#EDEFE9",
