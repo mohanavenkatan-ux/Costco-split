@@ -1,5 +1,10 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warehouse Split</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2F6F5E">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
@@ -308,6 +313,18 @@
   .history-total{ font-weight: 600; }
   .history-actions{ display:flex; gap: .4rem; }
 
+  .toast{
+    position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%);
+    background: var(--ink); color: var(--paper);
+    border-radius: 10px; padding: .65rem .7rem .65rem 1rem;
+    display:flex; align-items:center; gap: .9rem;
+    box-shadow: 0 4px 16px var(--shadow);
+    font-size: .88rem; z-index: 20;
+  }
+  .toast[hidden]{ display:none; }
+  .toast .btn{ background: transparent; border-color: var(--paper); color: var(--paper); }
+  .toast .btn:hover{ background: var(--paper); color: var(--ink); }
+
   @media (max-width: 620px){
     .toggles{ flex-wrap: wrap; max-width: 7rem; }
     table.ledger thead{ display:none; }
@@ -359,6 +376,7 @@
         <button class="btn" id="loadSampleBtn">Load sample receipt</button>
         <button class="btn" id="clearItemsBtn">Clear all items</button>
         <button class="btn" id="saveHistoryBtn">Save to history</button>
+        <button class="btn" id="repeatTripBtn">Repeat last trip's split</button>
       </div>
     </div>
     <div class="import-status" id="importStatus"></div>
@@ -390,7 +408,10 @@
   </section>
 
   <section class="card" id="settleCard">
-    <div class="section-label">Settle up</div>
+    <div class="ledger-head">
+      <div class="section-label" style="margin-bottom:0;">Settle up</div>
+      <button class="btn" id="copySummaryBtn">Copy summary</button>
+    </div>
     <div id="settleBody"></div>
   </section>
   </div>
@@ -431,6 +452,11 @@
   </div>
 
   <footer class="note">Saved automatically in this browser &middot; nothing leaves your device</footer>
+
+  <div class="toast" id="undoToast" hidden>
+    <span id="undoToastMsg"></span>
+    <button class="btn" id="undoToastBtn" type="button">Undo</button>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -597,6 +623,41 @@
     saveHistory();
   }
 
+  function normalizeItemName(name){
+    return String(name || "").trim().toLowerCase().replace(/\s*\(x\d+\)\s*$/, "");
+  }
+
+  function applyLastTripSplit(){
+    if(history.length === 0) return { applied: 0, total: 0 };
+    var last = history[0];
+    var initialById = {};
+    last.people.forEach(function(p){ initialById[p.id] = p.initial; });
+    var patternByName = {};
+    last.items.forEach(function(it){
+      var key = normalizeItemName(it.name);
+      if(!key || it.split.length === 0) return;
+      patternByName[key] = it.split.map(function(pid){ return initialById[pid]; }).filter(Boolean);
+    });
+
+    var currentIdByInitial = {};
+    state.people.forEach(function(p){ currentIdByInitial[p.initial] = p.id; });
+
+    var applied = 0, eligible = 0;
+    state.items.forEach(function(item){
+      if(item.split.length > 0) return;
+      var key = normalizeItemName(item.name);
+      var pattern = patternByName[key];
+      if(!pattern) return;
+      eligible++;
+      var ids = pattern.map(function(initial){ return currentIdByInitial[initial]; }).filter(Boolean);
+      if(ids.length > 0){
+        item.split = ids;
+        applied++;
+      }
+    });
+    return { applied: applied, total: eligible };
+  }
+
   function formatSavedAt(ts){
     var d = new Date(ts);
     if(isNaN(d.getTime())) return "";
@@ -695,9 +756,10 @@
       if(isUnassigned) tr.className = "unassigned";
       tr.dataset.iid = item.id;
 
-      var togglesHtml = state.people.map(function(p){
+      var togglesHtml = state.people.map(function(p, pIdx){
         var on = item.split.indexOf(p.id) !== -1;
-        return '<button type="button" class="toggle'+(on?" on":"")+'" style="--pc:var(--'+p.color+')" data-iid="'+item.id+'" data-pid="'+p.id+'" title="'+escapeAttr(p.initial)+'">'+escapeHtml(p.initial.slice(0,2))+'</button>';
+        var hint = pIdx < 9 ? (" (press " + (pIdx+1) + ")") : "";
+        return '<button type="button" class="toggle'+(on?" on":"")+'" style="--pc:var(--'+p.color+')" data-iid="'+item.id+'" data-pid="'+p.id+'" title="'+escapeAttr(p.initial)+hint+'">'+escapeHtml(p.initial.slice(0,2))+'</button>';
       }).join("");
 
       var memberCount = item.split.filter(function(pid){return state.people.some(function(p){return p.id===pid;});}).length;
@@ -709,9 +771,57 @@
         '<td class="item-name"><input type="text" value="'+escapeAttr(item.name)+'" data-iid="'+item.id+'" class="item-name-input"></td>' +
         '<td><div class="item-price"><span>'+escapeHtml(state.currency||"$")+'</span><input type="number" step="0.01" min="0" value="'+priceNum.toFixed(2)+'" data-iid="'+item.id+'" class="item-price-input"></div></td>' +
         '<td><div class="toggles">'+togglesHtml+'</div></td>' +
-        '<td><div class="row-actions"><button class="btn ghost all-btn" data-iid="'+item.id+'">all</button><button class="btn ghost none-btn" data-iid="'+item.id+'">none</button></div>' +
+        '<td><div class="row-actions"><button class="btn ghost all-btn" data-iid="'+item.id+'">all</button><button class="btn ghost none-btn" data-iid="'+item.id+'">none</button><button class="btn ghost dup-row" data-iid="'+item.id+'" title="Duplicate item">dup</button></div>' +
         '<div class="share-hint">'+hint+'</div></td>';
       body.appendChild(tr);
+    });
+  }
+
+  function buildSummaryText(){
+    var calc = computeTotals();
+    var lines = [];
+    lines.push(state.receiptLabel || "Receipt split");
+    lines.push("Total: " + fmt(calc.grandTotalCents));
+    lines.push("");
+    state.people.forEach(function(p){
+      lines.push(p.initial + ": " + fmt(calc.byPerson[p.id]));
+    });
+    var payer = state.people.find(function(p){ return p.id === state.paidBy; });
+    if(payer){
+      var owers = state.people.filter(function(p){ return p.id !== payer.id && calc.byPerson[p.id] > 0; });
+      lines.push("");
+      if(owers.length === 0){
+        lines.push("Nobody owes " + payer.initial + " anything.");
+      } else {
+        lines.push("Paid by " + payer.initial + " - settle up:");
+        owers.forEach(function(p){
+          lines.push(p.initial + " owes " + payer.initial + " " + fmt(calc.byPerson[p.id]));
+        });
+      }
+    }
+    return lines.join("\n");
+  }
+
+  function copyTextToClipboard(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function(resolve, reject){
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try{
+        var ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        ok ? resolve() : reject(new Error("execCommand failed"));
+      }catch(e){
+        document.body.removeChild(ta);
+        reject(e);
+      }
     });
   }
 
@@ -896,6 +1006,30 @@
     el.textContent = msg;
   }
 
+  var undoTimer = null;
+  var pendingUndo = null;
+
+  function hideUndoToast(){
+    document.getElementById("undoToast").hidden = true;
+    pendingUndo = null;
+    if(undoTimer){ clearTimeout(undoTimer); undoTimer = null; }
+  }
+
+  function showUndoToast(message, restoreFn){
+    if(undoTimer) clearTimeout(undoTimer);
+    pendingUndo = restoreFn;
+    document.getElementById("undoToastMsg").textContent = message;
+    document.getElementById("undoToast").hidden = false;
+    undoTimer = setTimeout(hideUndoToast, 6000);
+  }
+
+  function refocusToggle(iid, personIndex){
+    var row = document.querySelector('tr[data-iid="'+iid+'"]');
+    if(!row) return;
+    var toggles = row.querySelectorAll(".toggle");
+    if(toggles[personIndex]) toggles[personIndex].focus();
+  }
+
   function handlePdfFile(file){
     if(!window.pdfjsLib){
       showImportStatus("err", "PDF reader failed to load (no internet access to cdnjs.cloudflare.com?). Add items manually below instead.");
@@ -995,6 +1129,34 @@
     snapshotToHistory();
     showImportStatus("ok", "Saved this receipt to history.");
   });
+  document.getElementById("repeatTripBtn").addEventListener("click", function(){
+    if(history.length === 0){
+      showImportStatus("err", "No saved trips yet - save one to history first.");
+      return;
+    }
+    if(state.items.length === 0){
+      showImportStatus("err", "Add or import this trip's items first, then repeat last time's split.");
+      return;
+    }
+    var result = applyLastTripSplit();
+    renderItems(); renderSummaryAndTotals(); save();
+    if(result.total === 0){
+      showImportStatus("err", "No unassigned items matched last trip's item names.");
+    } else {
+      showImportStatus("ok", "Applied last trip's split to " + result.applied + " of " + result.total + " matching item" + (result.total>1?"s":"") + ".");
+    }
+  });
+  document.getElementById("copySummaryBtn").addEventListener("click", function(){
+    var btn = document.getElementById("copySummaryBtn");
+    var text = buildSummaryText();
+    copyTextToClipboard(text).then(function(){
+      var original = btn.textContent;
+      btn.textContent = "Copied!";
+      setTimeout(function(){ btn.textContent = original; }, 1500);
+    }).catch(function(){
+      window.prompt("Copy this manually:", text);
+    });
+  });
   document.getElementById("clearHistoryBtn").addEventListener("click", function(){
     if(history.length === 0) return;
     if(!confirm("Delete all saved receipts from history? This can't be undone.")) return;
@@ -1077,13 +1239,62 @@
       renderItems(); renderSummaryAndTotals(); save();
       return;
     }
+    var dup = e.target.closest(".dup-row");
+    if(dup){
+      var srcIdx = state.items.findIndex(function(it){ return it.id === dup.dataset.iid; });
+      if(srcIdx !== -1){
+        var src = state.items[srcIdx];
+        var copy = { id: uid(), name: src.name, price: src.price, split: src.split.slice() };
+        state.items.splice(srcIdx + 1, 0, copy);
+        renderItems(); renderSummaryAndTotals(); save();
+      }
+      return;
+    }
     var del = e.target.closest(".del-row");
     if(del){
-      state.items = state.items.filter(function(it){ return it.id !== del.dataset.iid; });
+      var delIdx = state.items.findIndex(function(it){ return it.id === del.dataset.iid; });
+      if(delIdx === -1) return;
+      var removed = state.items[delIdx];
+      state.items.splice(delIdx, 1);
       renderItems(); renderSummaryAndTotals(); save();
+      showUndoToast('Removed "' + (removed.name || "item") + '"', function(){
+        state.items.splice(delIdx, 0, removed);
+        renderItems(); renderSummaryAndTotals(); save();
+      });
     }
   });
 
+  document.getElementById("itemsBody").addEventListener("keydown", function(e){
+    if(e.target.classList.contains("toggle") && e.key >= "1" && e.key <= "9"){
+      var idx = Number(e.key) - 1;
+      if(idx < state.people.length){
+        e.preventDefault();
+        var iid = e.target.dataset.iid;
+        var pid = state.people[idx].id;
+        var item = state.items.find(function(it){ return it.id === iid; });
+        var pos = item.split.indexOf(pid);
+        if(pos === -1) item.split.push(pid); else item.split.splice(pos, 1);
+        renderItems(); renderSummaryAndTotals(); save();
+        refocusToggle(iid, idx);
+      }
+      return;
+    }
+    if(e.key === "Enter" && (e.target.classList.contains("item-name-input") || e.target.classList.contains("item-price-input"))){
+      e.preventDefault();
+      document.getElementById("addItemBtn").click();
+    }
+  });
+
+  document.getElementById("undoToastBtn").addEventListener("click", function(){
+    if(pendingUndo){ var fn = pendingUndo; hideUndoToast(); fn(); }
+  });
+
   renderAll();
+
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("sw.js").catch(function(){});
+    });
+  }
 })();
 </script>
