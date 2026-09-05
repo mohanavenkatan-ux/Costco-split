@@ -376,6 +376,7 @@
         <button class="btn" id="loadSampleBtn">Load sample receipt</button>
         <button class="btn" id="clearItemsBtn">Clear all items</button>
         <button class="btn" id="saveHistoryBtn">Save to history</button>
+        <button class="btn" id="repeatTripBtn">Repeat last trip's split</button>
       </div>
     </div>
     <div class="import-status" id="importStatus"></div>
@@ -620,6 +621,41 @@
     });
     if(history.length > HISTORY_LIMIT) history = history.slice(0, HISTORY_LIMIT);
     saveHistory();
+  }
+
+  function normalizeItemName(name){
+    return String(name || "").trim().toLowerCase().replace(/\s*\(x\d+\)\s*$/, "");
+  }
+
+  function applyLastTripSplit(){
+    if(history.length === 0) return { applied: 0, total: 0 };
+    var last = history[0];
+    var initialById = {};
+    last.people.forEach(function(p){ initialById[p.id] = p.initial; });
+    var patternByName = {};
+    last.items.forEach(function(it){
+      var key = normalizeItemName(it.name);
+      if(!key || it.split.length === 0) return;
+      patternByName[key] = it.split.map(function(pid){ return initialById[pid]; }).filter(Boolean);
+    });
+
+    var currentIdByInitial = {};
+    state.people.forEach(function(p){ currentIdByInitial[p.initial] = p.id; });
+
+    var applied = 0, eligible = 0;
+    state.items.forEach(function(item){
+      if(item.split.length > 0) return;
+      var key = normalizeItemName(item.name);
+      var pattern = patternByName[key];
+      if(!pattern) return;
+      eligible++;
+      var ids = pattern.map(function(initial){ return currentIdByInitial[initial]; }).filter(Boolean);
+      if(ids.length > 0){
+        item.split = ids;
+        applied++;
+      }
+    });
+    return { applied: applied, total: eligible };
   }
 
   function formatSavedAt(ts){
@@ -1092,6 +1128,23 @@
     }
     snapshotToHistory();
     showImportStatus("ok", "Saved this receipt to history.");
+  });
+  document.getElementById("repeatTripBtn").addEventListener("click", function(){
+    if(history.length === 0){
+      showImportStatus("err", "No saved trips yet - save one to history first.");
+      return;
+    }
+    if(state.items.length === 0){
+      showImportStatus("err", "Add or import this trip's items first, then repeat last time's split.");
+      return;
+    }
+    var result = applyLastTripSplit();
+    renderItems(); renderSummaryAndTotals(); save();
+    if(result.total === 0){
+      showImportStatus("err", "No unassigned items matched last trip's item names.");
+    } else {
+      showImportStatus("ok", "Applied last trip's split to " + result.applied + " of " + result.total + " matching item" + (result.total>1?"s":"") + ".");
+    }
   });
   document.getElementById("copySummaryBtn").addEventListener("click", function(){
     var btn = document.getElementById("copySummaryBtn");
