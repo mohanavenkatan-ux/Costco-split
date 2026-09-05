@@ -275,6 +275,39 @@
     margin-top: 2rem; text-align:center; color: var(--ink-faint); font-size: .78rem;
   }
 
+  .tabs{
+    display:flex; gap: .3rem; margin-top: 1.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .tab-btn{
+    font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+    background: transparent; border: none; color: var(--ink-faint);
+    padding: .6rem .9rem; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab-btn:hover{ color: var(--ink); }
+  .tab-btn.active{ color: var(--accent); border-bottom-color: var(--accent); }
+
+  .history-list{ display:flex; flex-direction:column; gap:.7rem; margin-top:.7rem; }
+  .history-empty{ color: var(--ink-faint); font-size: .9rem; }
+  .history-card{
+    background: var(--paper); border: 1px solid var(--line); border-radius: 10px;
+    padding: .8rem .9rem;
+  }
+  .history-card-head{
+    display:flex; justify-content:space-between; align-items:baseline; gap:.75rem; flex-wrap:wrap;
+  }
+  .history-card-head .label{ font-weight: 600; }
+  .history-card-head .when{ font-size: .78rem; color: var(--ink-faint); }
+  .history-people{ display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.55rem; }
+  .history-person{
+    display:flex; align-items:center; gap:.3rem; font-size: .78rem;
+    background: var(--paper-raised); border: 1px solid var(--line); border-radius: 999px; padding: .2rem .55rem;
+  }
+  .history-person .dot{ width:.45rem; height:.45rem; border-radius:50%; background: var(--pc); flex:none; }
+  .history-card-foot{ display:flex; justify-content: space-between; align-items:center; margin-top: .65rem; }
+  .history-total{ font-weight: 600; }
+  .history-actions{ display:flex; gap: .4rem; }
+
   @media (max-width: 620px){
     .toggles{ flex-wrap: wrap; max-width: 7rem; }
     table.ledger thead{ display:none; }
@@ -289,6 +322,12 @@
     <div class="sub">Receipt: <input id="receiptLabel" value="Costco &middot; Christiana #246 &middot; Aug 30, 2026"></div>
   </header>
 
+  <nav class="tabs" id="tabsNav">
+    <button class="tab-btn active" type="button" data-tab="split">Split</button>
+    <button class="tab-btn" type="button" data-tab="history">History</button>
+  </nav>
+
+  <div id="splitView">
   <div class="summary">
     <div class="wrap" style="padding:0;">
       <div class="summary-row" id="summaryRow"></div>
@@ -323,6 +362,7 @@
         <input type="file" id="pdfInput" accept="application/pdf" style="display:none;">
         <button class="btn" id="loadSampleBtn">Load Costco 8/30 receipt</button>
         <button class="btn" id="clearItemsBtn">Clear all items</button>
+        <button class="btn" id="saveHistoryBtn">Save to history</button>
       </div>
     </div>
     <div class="import-status" id="importStatus"></div>
@@ -357,6 +397,17 @@
     <div class="section-label">Settle up</div>
     <div id="settleBody"></div>
   </section>
+  </div>
+
+  <div id="historyView" hidden>
+    <section class="card">
+      <div class="ledger-head">
+        <div class="section-label" style="margin-bottom:0;">Saved receipts</div>
+        <button class="btn" id="clearHistoryBtn">Clear history</button>
+      </div>
+      <div class="history-list" id="historyList"></div>
+    </section>
+  </div>
 
   <footer class="note">Saved automatically in this browser &middot; nothing leaves your device</footer>
 </div>
@@ -420,7 +471,23 @@
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
   }
 
+  var HISTORY_KEY = "warehouseSplit_history_v1";
+  var HISTORY_LIMIT = 20;
+
+  function loadHistory(){
+    try{
+      var raw = localStorage.getItem(HISTORY_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    }catch(e){ return []; }
+  }
+
+  function saveHistory(){
+    try{ localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); }catch(e){}
+  }
+
   var state = load();
+  var history = loadHistory();
 
   function fmt(cents){
     var neg = cents < 0;
@@ -486,6 +553,80 @@
       taxCents: taxCents,
       grandTotalCents: itemsTotalCents + taxCents
     };
+  }
+
+  // ---------- history ----------
+  function snapshotToHistory(){
+    if(state.items.length === 0) return;
+    var calc = computeTotals();
+    history.unshift({
+      id: uid(),
+      savedAt: Date.now(),
+      receiptLabel: state.receiptLabel,
+      people: JSON.parse(JSON.stringify(state.people)),
+      items: JSON.parse(JSON.stringify(state.items)),
+      paidBy: state.paidBy,
+      tax: state.tax,
+      totals: calc.byPerson,
+      grandTotalCents: calc.grandTotalCents
+    });
+    if(history.length > HISTORY_LIMIT) history = history.slice(0, HISTORY_LIMIT);
+    saveHistory();
+  }
+
+  function formatSavedAt(ts){
+    var d = new Date(ts);
+    if(isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) +
+      " at " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+
+  function renderHistory(){
+    var list = document.getElementById("historyList");
+    if(history.length === 0){
+      list.innerHTML = '<div class="history-empty">No saved receipts yet. Finish splitting one on the Split tab, then hit "Save to history" &mdash; or it saves automatically when you load a new receipt over an existing one.</div>';
+      return;
+    }
+    list.innerHTML = history.map(function(h){
+      var peopleHtml = h.people.map(function(p){
+        var cents = (h.totals && h.totals[p.id]) || 0;
+        return '<div class="history-person"><span class="dot" style="background:var(--'+p.color+')"></span>'+escapeHtml(p.initial)+' '+fmt(cents)+'</div>';
+      }).join("");
+      return '<div class="history-card" data-hid="'+h.id+'">' +
+        '<div class="history-card-head"><span class="label">'+escapeHtml(h.receiptLabel || "Untitled receipt")+'</span><span class="when">'+formatSavedAt(h.savedAt)+'</span></div>' +
+        '<div class="history-people">'+peopleHtml+'</div>' +
+        '<div class="history-card-foot"><span class="history-total money">'+fmt(h.grandTotalCents)+'</span>' +
+        '<div class="history-actions"><button class="btn restore-history-btn" data-hid="'+h.id+'">Restore</button><button class="btn ghost delete-history-btn" data-hid="'+h.id+'">Delete</button></div></div>' +
+        '</div>';
+    }).join("");
+  }
+
+  function restoreFromHistory(id){
+    var h = history.find(function(x){ return x.id === id; });
+    if(!h) return;
+    snapshotToHistory();
+    state.receiptLabel = h.receiptLabel;
+    state.people = JSON.parse(JSON.stringify(h.people));
+    state.items = JSON.parse(JSON.stringify(h.items));
+    state.paidBy = h.paidBy;
+    state.tax = h.tax;
+    renderAll();
+    setActiveTab("split");
+  }
+
+  function deleteFromHistory(id){
+    history = history.filter(function(x){ return x.id !== id; });
+    saveHistory();
+    renderHistory();
+  }
+
+  function setActiveTab(name){
+    document.querySelectorAll(".tab-btn").forEach(function(btn){
+      btn.classList.toggle("active", btn.dataset.tab === name);
+    });
+    document.getElementById("splitView").hidden = name !== "split";
+    document.getElementById("historyView").hidden = name !== "history";
+    if(name === "history") renderHistory();
   }
 
   // ---------- rendering ----------
@@ -758,6 +899,7 @@
         showImportStatus("err", "Couldn't find any line items in this PDF - it may not match the Costco receipt layout this reads. Add items manually below.");
         return;
       }
+      snapshotToHistory();
       state.items = parsed.items.map(function(it){ return { id: uid(), name: it.name, price: it.price, split: [] }; });
       if(parsed.store || parsed.date){
         state.receiptLabel = [parsed.store, parsed.date].filter(Boolean).join(" \u00b7 ");
@@ -807,6 +949,7 @@
     if(inputs.length) inputs[inputs.length-1].focus();
   });
   document.getElementById("loadSampleBtn").addEventListener("click", function(){
+    snapshotToHistory();
     state.items = SAMPLE_ITEMS.map(function(it){ return {id: uid(), name: it.name, price: it.price, split: []}; });
     state.receiptLabel = "Costco \u00b7 Christiana #246 \u00b7 Aug 30, 2026";
     state.tax = 0;
@@ -815,6 +958,33 @@
   document.getElementById("clearItemsBtn").addEventListener("click", function(){
     state.items = [];
     renderItems(); renderSummaryAndTotals(); save();
+  });
+  document.getElementById("saveHistoryBtn").addEventListener("click", function(){
+    if(state.items.length === 0){
+      showImportStatus("err", "Nothing to save yet - add or import some items first.");
+      return;
+    }
+    snapshotToHistory();
+    showImportStatus("ok", "Saved this receipt to history.");
+  });
+  document.getElementById("clearHistoryBtn").addEventListener("click", function(){
+    if(history.length === 0) return;
+    if(!confirm("Delete all saved receipts from history? This can't be undone.")) return;
+    history = [];
+    saveHistory();
+    renderHistory();
+  });
+  document.getElementById("historyList").addEventListener("click", function(e){
+    var restoreBtn = e.target.closest(".restore-history-btn");
+    if(restoreBtn){ restoreFromHistory(restoreBtn.dataset.hid); return; }
+    var delBtn = e.target.closest(".delete-history-btn");
+    if(delBtn){
+      if(confirm("Delete this saved receipt?")) deleteFromHistory(delBtn.dataset.hid);
+    }
+  });
+  document.getElementById("tabsNav").addEventListener("click", function(e){
+    var btn = e.target.closest(".tab-btn");
+    if(btn) setActiveTab(btn.dataset.tab);
   });
 
   document.getElementById("peopleRow").addEventListener("click", function(e){
