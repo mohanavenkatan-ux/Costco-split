@@ -247,6 +247,15 @@
 
   .add-item-row td{ padding-top: .7rem; }
 
+  .import-status{
+    display:none; margin-top:.7rem; padding: .55rem .75rem; border-radius: 8px;
+    font-size: .85rem; border: 1px solid var(--line);
+  }
+  .import-status.show{ display:block; }
+  .import-status.ok{ background: var(--credit-soft); border-color: var(--credit); color: var(--ink); }
+  .import-status.err{ background: var(--owe-soft); border-color: var(--owe); color: var(--ink); }
+  .import-status.busy{ background: var(--paper-sunken); color: var(--ink-soft); }
+
   .totals-table{ width:100%; border-collapse: collapse; margin-top: .6rem;}
   .totals-table td{ padding: .35rem .2rem; }
   .totals-table td:last-child{ text-align:right; }
@@ -310,10 +319,13 @@
     <div class="ledger-head">
       <div class="section-label" style="margin-bottom:0;">Items</div>
       <div class="toolbar">
+        <button class="btn primary" id="uploadPdfBtn">Upload receipt PDF</button>
+        <input type="file" id="pdfInput" accept="application/pdf" style="display:none;">
         <button class="btn" id="loadSampleBtn">Load Costco 8/30 receipt</button>
         <button class="btn" id="clearItemsBtn">Clear all items</button>
       </div>
     </div>
+    <div class="import-status" id="importStatus"></div>
     <div style="overflow-x:auto;">
       <table class="ledger">
         <thead>
@@ -349,9 +361,13 @@
   <footer class="note">Saved automatically in this browser &middot; nothing leaves your device</footer>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
 (function(){
   "use strict";
+  if(window.pdfjsLib){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
   var STORAGE_KEY = "warehouseSplit_v1";
   var PALETTE = ["p0","p1","p2","p3","p4","p5","p6","p7"];
 
@@ -594,7 +610,187 @@
   function escapeHtml(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function escapeAttr(s){ return escapeHtml(s); }
 
+  // ---------- Costco PDF import ----------
+  // Calibrated to the "Orders & Purchases" receipt PDF costco.com prints from
+  // myaccount/#/app/.../ordersandpurchases. Column x-ranges (PDF points) match
+  // that fixed-width layout: left flag/qty col, item-code col, description
+  // col, price col, tax-flag col.
+  function colOf(x){
+    if(x < 230) return "L";
+    if(x < 290) return "C";
+    if(x < 400) return "D";
+    if(x < 425) return "P";
+    return "T";
+  }
+
+  function groupRows(items){
+    var sorted = items.slice().sort(function(a,b){ return b.y - a.y || a.x - b.x; });
+    var rows = [];
+    var tol = 3;
+    sorted.forEach(function(it){
+      var row = rows.length ? rows[rows.length-1] : null;
+      if(row && Math.abs(row.y - it.y) <= tol){ row.items.push(it); }
+      else { rows.push({ y: it.y, items: [it] }); }
+    });
+    rows.forEach(function(r){ r.items.sort(function(a,b){ return a.x - b.x; }); });
+    return rows;
+  }
+
+  function parseCostcoRows(rows){
+    var anchors = [];
+    var strayDescRows = [];
+    var pendingQty = null;
+    var doneAt = rows.length;
+    var parsedTax = null, parsedTotal = null, storeLine = null, receiptDate = null;
+
+    for(var idx=0; idx<rows.length; idx++){
+      var items = rows[idx].items;
+      var y = rows[idx].y;
+      var descTok = items.filter(function(i){ return colOf(i.x)==="D"; }).map(function(i){ return i.str; }).join(" ").trim();
+
+      if(!storeLine && items.some(function(i){ return /#\d+/.test(i.str); })){
+        storeLine = items.map(function(i){ return i.str; }).join(" ").trim();
+      }
+      if(!receiptDate){
+        var dtTok = items.find(function(i){ return /^\d{2}\/\d{2}\/\d{4}$/.test(i.str); });
+        if(dtTok) receiptDate = dtTok.str;
+      }
+
+      if(idx >= doneAt){
+        var priceTok2 = items.find(function(i){ return colOf(i.x)==="P" && /^\d+\.\d{2}(\s|$)/.test(i.str); });
+        var up = descTok.toUpperCase();
+        if(priceTok2 && up === "TAX") parsedTax = parseFloat(priceTok2.str);
+        if(priceTok2 && up === "TOTAL") parsedTotal = parseFloat(priceTok2.str);
+        continue;
+      }
+
+      if(/^SUBTOTAL$/i.test(descTok)){ doneAt = idx; continue; }
+
+      var codeTok = items.find(function(i){ return colOf(i.x)==="C" && /^\d{1,8}$/.test(i.str); });
+      var priceTok = items.find(function(i){ return colOf(i.x)==="P" && /^\d+\.\d{2}(\s|$)/.test(i.str); });
+
+      if(codeTok && priceTok){
+        anchors.push({ rowIndex: idx, y: y, code: codeTok.str, price: parseFloat(priceTok.str), sameDesc: descTok, qty: pendingQty, discount: 0, before: [], after: [] });
+        pendingQty = null;
+        continue;
+      }
+
+      // discount reference row, e.g. code col "387167" + desc col "/ 638854" + price col "2.50-"
+      var negPriceTok = items.find(function(i){ return /^\d+\.\d{2}-$/.test(i.str); });
+      var slashTok = items.find(function(i){ return i.str.indexOf("/") !== -1; });
+      if(slashTok && negPriceTok){
+        var codeMatch = slashTok.str.match(/(\d+)/);
+        var targetCode = codeMatch ? codeMatch[1] : null;
+        var amt = parseFloat(negPriceTok.str);
+        if(targetCode){
+          for(var k=anchors.length-1; k>=0; k--){
+            if(anchors[k].code === targetCode){ anchors[k].discount += amt; break; }
+          }
+        }
+        continue;
+      }
+
+      var lineText = items.map(function(i){ return i.str; }).join(" ").trim();
+      var qtyMatch = lineText.match(/^(\d+)\s*@\s*(\d+\.\d{2})$/);
+      if(qtyMatch){ pendingQty = { n: parseInt(qtyMatch[1],10), unit: parseFloat(qtyMatch[2]) }; continue; }
+
+      if(descTok){ strayDescRows.push({ rowIndex: idx, y: y, text: descTok }); }
+    }
+
+    strayDescRows.forEach(function(s){
+      if(anchors.length === 0) return;
+      var prevA = null, nextA = null;
+      for(var i=0;i<anchors.length;i++){
+        if(anchors[i].rowIndex < s.rowIndex) prevA = anchors[i];
+        if(anchors[i].rowIndex > s.rowIndex && !nextA) nextA = anchors[i];
+      }
+      if(!prevA) return; // text above the very first item is page header junk, discard
+      var target = nextA ? (Math.abs(prevA.y - s.y) <= Math.abs(nextA.y - s.y) ? prevA : nextA) : prevA;
+      if(s.rowIndex < target.rowIndex) target.before.push(s); else target.after.push(s);
+    });
+
+    var items = anchors.map(function(a){
+      a.before.sort(function(x,y2){ return x.rowIndex - y2.rowIndex; });
+      a.after.sort(function(x,y2){ return x.rowIndex - y2.rowIndex; });
+      var nameParts = a.before.map(function(s){ return s.text; });
+      if(a.sameDesc) nameParts.push(a.sameDesc);
+      a.after.forEach(function(s){ nameParts.push(s.text); });
+      var name = nameParts.join(" ").replace(/\s+/g," ").replace(/^\*+\s*/,"").trim();
+      if(a.qty && a.qty.n > 1) name += " (x" + a.qty.n + ")";
+      var netPrice = Math.max(0, a.price - (a.discount||0));
+      return { name: name || ("Item " + a.code), price: Math.round(netPrice*100)/100 };
+    });
+
+    return { items: items, tax: parsedTax, total: parsedTotal, store: storeLine, date: receiptDate };
+  }
+
+  function showImportStatus(kind, msg){
+    var el = document.getElementById("importStatus");
+    el.className = "import-status show " + kind;
+    el.textContent = msg;
+  }
+
+  function handlePdfFile(file){
+    if(!window.pdfjsLib){
+      showImportStatus("err", "PDF reader failed to load (no internet access to cdnjs.cloudflare.com?). Add items manually below instead.");
+      return;
+    }
+    showImportStatus("busy", "Reading " + file.name + "...");
+    file.arrayBuffer().then(function(buf){
+      return pdfjsLib.getDocument({ data: buf }).promise;
+    }).then(function(pdf){
+      var pageCount = Math.min(pdf.numPages, 3);
+      var pagePromises = [];
+      for(var p=1; p<=pageCount; p++){ pagePromises.push(pdf.getPage(p)); }
+      return Promise.all(pagePromises);
+    }).then(function(pages){
+      return Promise.all(pages.map(function(page){ return page.getTextContent(); }));
+    }).then(function(contents){
+      var allRows = [];
+      contents.forEach(function(content){
+        var items = content.items.map(function(it){
+          return { str: (it.str||"").trim(), x: it.transform[4], y: it.transform[5] };
+        }).filter(function(it){ return it.str.length > 0; });
+        allRows = allRows.concat(groupRows(items));
+      });
+      var parsed = parseCostcoRows(allRows);
+      if(parsed.items.length === 0){
+        showImportStatus("err", "Couldn't find any line items in this PDF - it may not match the Costco receipt layout this reads. Add items manually below.");
+        return;
+      }
+      state.items = parsed.items.map(function(it){ return { id: uid(), name: it.name, price: it.price, split: [] }; });
+      if(parsed.store || parsed.date){
+        state.receiptLabel = [parsed.store, parsed.date].filter(Boolean).join(" \u00b7 ");
+      }
+      state.tax = parsed.tax || 0;
+      renderAll();
+
+      var sum = parsed.items.reduce(function(s,it){ return s + it.price; }, 0) + (parsed.tax||0);
+      var sumCents = Math.round(sum*100);
+      if(parsed.total != null){
+        var totalCents = Math.round(parsed.total*100);
+        if(Math.abs(sumCents - totalCents) <= 1){
+          showImportStatus("ok", "Imported " + parsed.items.length + " items - $" + sum.toFixed(2) + " matches the receipt total. Now assign who's splitting each item below.");
+        } else {
+          showImportStatus("err", "Imported " + parsed.items.length + " items totaling $" + sum.toFixed(2) + ", but the receipt says $" + parsed.total.toFixed(2) + " - please review the items below for anything missed or misread.");
+        }
+      } else {
+        showImportStatus("ok", "Imported " + parsed.items.length + " items - $" + sum.toFixed(2) + " total. Review below, then assign who's splitting each item.");
+      }
+    }).catch(function(err){
+      showImportStatus("err", "Couldn't read that PDF (" + (err && err.message ? err.message : "unknown error") + "). Add items manually below instead.");
+    });
+  }
+
   // ---------- events ----------
+  document.getElementById("uploadPdfBtn").addEventListener("click", function(){
+    document.getElementById("pdfInput").click();
+  });
+  document.getElementById("pdfInput").addEventListener("change", function(e){
+    var file = e.target.files && e.target.files[0];
+    if(file) handlePdfFile(file);
+    e.target.value = "";
+  });
   document.getElementById("receiptLabel").addEventListener("input", function(e){
     state.receiptLabel = e.target.value; save();
   });
