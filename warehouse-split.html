@@ -1,0 +1,1061 @@
+<meta charset="utf-8">
+<title>Warehouse Split</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --paper: #EDEFE9;
+    --paper-raised: #F8F9F4;
+    --paper-sunken: #E3E6DC;
+    --ink: #20241F;
+    --ink-soft: #5B6058;
+    --ink-faint: #8A8F82;
+    --line: #CDD1C2;
+    --line-strong: #B7BCAA;
+    --accent: #2F6F5E;
+    --accent-ink: #F8F9F4;
+    --owe: #B14A3A;
+    --owe-soft: #F3E2DD;
+    --credit: #4C7A3E;
+    --credit-soft: #E4EBDC;
+    --warn: #B08A2E;
+    --warn-soft: #F3ECD9;
+    --shadow: rgba(32,36,31,0.14);
+
+    --p0: #4C6C8C;
+    --p1: #8C5A3C;
+    --p2: #B08A2E;
+    --p3: #7A5C99;
+    --p4: #C4577A;
+    --p5: #3E8A93;
+    --p6: #6B8C4C;
+    --p7: #99657A;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper: #1B1D18;
+      --paper-raised: #24271F;
+      --paper-sunken: #15170F;
+      --ink: #EDEFE5;
+      --ink-soft: #A8AC9C;
+      --ink-faint: #767A6C;
+      --line: #383C31;
+      --line-strong: #4A4F3F;
+      --accent: #6FBFA2;
+      --accent-ink: #10231D;
+      --owe: #E0897A;
+      --owe-soft: #3A2620;
+      --credit: #9AC788;
+      --credit-soft: #223522;
+      --warn: #E3C46B;
+      --warn-soft: #3A331B;
+      --shadow: rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper: #1B1D18;
+    --paper-raised: #24271F;
+    --paper-sunken: #15170F;
+    --ink: #EDEFE5;
+    --ink-soft: #A8AC9C;
+    --ink-faint: #767A6C;
+    --line: #383C31;
+    --line-strong: #4A4F3F;
+    --accent: #6FBFA2;
+    --accent-ink: #10231D;
+    --owe: #E0897A;
+    --owe-soft: #3A2620;
+    --credit: #9AC788;
+    --credit-soft: #223522;
+    --warn: #E3C46B;
+    --warn-soft: #3A331B;
+    --shadow: rgba(0,0,0,0.4);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    margin:0;
+    padding: 0 0 4rem;
+  }
+  .money, input[type="number"], .num{
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wrap{ max-width: 880px; margin: 0 auto; padding: 0 1.25rem; }
+
+  header.page{ padding: 2.25rem 0 1rem; }
+  header.page h1{
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(1.9rem, 4vw, 2.5rem);
+    margin: 0 0 .2rem;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  header.page .sub{
+    color: var(--ink-soft);
+    font-size: 0.92rem;
+  }
+  header.page .sub input{
+    font: inherit; color: inherit; background: transparent; border: none; border-bottom: 1px dashed var(--line-strong);
+    padding: 0 .1rem; width: 9em;
+  }
+  header.page .sub input:focus{ outline: none; border-bottom-color: var(--accent); }
+
+  /* sticky summary */
+  .summary{
+    position: sticky; top: 0; z-index: 5;
+    background: var(--paper);
+    padding: .85rem 0;
+    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(6px);
+  }
+  .summary-row{
+    display:flex; gap:.5rem; flex-wrap: wrap; align-items: stretch;
+  }
+  .pill{
+    flex: 1 1 100px;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: .5rem .7rem;
+    display:flex; flex-direction: column; gap: .15rem;
+    border-top: 3px solid var(--pc, var(--accent));
+  }
+  .pill .who{ display:flex; align-items:center; gap:.35rem; font-size:.78rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em;}
+  .pill .dot{ width:.5rem; height:.5rem; border-radius:50%; background: var(--pc, var(--accent)); flex: none; }
+  .pill .amt{ font-size: 1.15rem; font-weight: 500; }
+  .pill.grand{ border-top-color: var(--ink-faint); background: var(--paper-sunken); }
+  .pill.grand .amt{ font-weight: 600; }
+
+  .warn-banner{
+    margin-top: .6rem;
+    background: var(--warn-soft); color: var(--ink);
+    border: 1px solid var(--warn);
+    border-radius: 8px;
+    padding: .5rem .75rem;
+    font-size: .85rem;
+    display:none;
+  }
+  .warn-banner.show{ display:block; }
+
+  section{ margin-top: 1.75rem; }
+  .card{
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 1.1rem 1.25rem;
+    box-shadow: 0 1px 2px var(--shadow);
+  }
+
+  .section-label{
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--ink-faint); font-weight: 600; margin-bottom: .7rem;
+  }
+
+  /* people bar */
+  .people-row{ display:flex; flex-wrap: wrap; gap:.6rem; align-items:center; }
+  .person-chip{
+    display:flex; align-items:center; gap:.4rem;
+    background: var(--paper); border: 1px solid var(--line-strong);
+    border-radius: 999px; padding: .3rem .35rem .3rem .7rem;
+  }
+  .person-chip .swatch{ width:.6rem; height:.6rem; border-radius:50%; background: var(--pc); flex:none; }
+  .person-chip input{
+    font: inherit; font-weight: 600; width: 3ch; text-align:center;
+    background: transparent; border: none; color: var(--ink);
+  }
+  .person-chip input:focus{ outline: none; }
+  .person-chip button{
+    width: 1.35rem; height: 1.35rem; border-radius: 50%; border: none;
+    background: var(--paper-sunken); color: var(--ink-faint); cursor:pointer;
+    font-size: .8rem; line-height: 1; display:flex; align-items:center; justify-content:center;
+  }
+  .person-chip button:hover{ background: var(--owe-soft); color: var(--owe); }
+  .add-person{
+    border: 1px dashed var(--line-strong); background: transparent; color: var(--ink-soft);
+    border-radius: 999px; padding: .4rem .9rem; cursor: pointer; font-size: .85rem;
+  }
+  .add-person:hover{ border-color: var(--accent); color: var(--accent); }
+
+  /* trip settings */
+  .settings-grid{
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 1rem;
+    margin-top: 1rem;
+  }
+  .field label{ display:block; font-size: .78rem; color: var(--ink-soft); margin-bottom: .3rem; }
+  .field select, .field input[type="number"]{
+    width:100%; font-size: .95rem; padding: .45rem .55rem;
+    background: var(--paper); border: 1px solid var(--line-strong); border-radius: 8px; color: var(--ink);
+  }
+  .field select:focus, .field input:focus{ outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ledger */
+  .ledger-head{ display:flex; justify-content: space-between; align-items:center; margin-bottom: .3rem; }
+  .toolbar{ display:flex; gap:.5rem; flex-wrap:wrap; }
+  .btn{
+    border: 1px solid var(--line-strong); background: var(--paper);
+    color: var(--ink); border-radius: 8px; padding: .4rem .75rem;
+    font-size: .82rem; cursor: pointer; font-family: inherit;
+  }
+  .btn:hover{ border-color: var(--accent); color: var(--accent); }
+  .btn.primary{ background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn.primary:hover{ opacity: .9; color: var(--accent-ink); }
+  .btn.ghost{ border-color: transparent; color: var(--ink-faint); padding: .25rem .4rem; font-size: .78rem; }
+  .btn.ghost:hover{ color: var(--owe); }
+
+  table.ledger{ width:100%; border-collapse: collapse; margin-top: .5rem; }
+  table.ledger thead th{
+    text-align:left; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ink-faint); font-weight: 600; padding: .3rem .4rem; border-bottom: 1px solid var(--line-strong);
+  }
+  table.ledger tbody tr{ border-bottom: 1px dashed var(--line); }
+  table.ledger tbody tr.unassigned{ background: var(--warn-soft); }
+  table.ledger td{ padding: .45rem .4rem; vertical-align: middle; }
+  .item-name input{
+    width:100%; font: inherit; background: transparent; border: none; border-bottom: 1px solid transparent;
+    color: var(--ink); padding: .2rem 0;
+  }
+  .item-name input:focus{ outline:none; border-bottom-color: var(--accent); }
+  .item-price{ display:flex; align-items:center; gap: .2rem; white-space: nowrap; }
+  .item-price span{ color: var(--ink-faint); }
+  .item-price input{
+    width: 5.2em; background: transparent; border: none; border-bottom: 1px solid transparent;
+    color: var(--ink); padding: .2rem 0; text-align: right;
+  }
+  .item-price input:focus{ outline:none; border-bottom-color: var(--accent); }
+  .toggles{ display:flex; gap: .3rem; }
+  .toggle{
+    width: 1.9rem; height: 1.9rem; border-radius: 50%;
+    border: 1.5px solid var(--line-strong); background: var(--paper);
+    color: var(--ink-faint); font-size: .72rem; font-weight: 600;
+    cursor: pointer; display:flex; align-items:center; justify-content:center;
+    font-family: "IBM Plex Mono", monospace;
+  }
+  .toggle.on{ background: var(--pc); border-color: var(--pc); color: #fff; }
+  .row-actions{ display:flex; gap:.15rem; }
+  .share-hint{ font-size: .72rem; color: var(--ink-faint); white-space:nowrap; }
+  .del-row{
+    width:1.6rem; height:1.6rem; border-radius:6px; border:none; background:transparent;
+    color: var(--ink-faint); cursor:pointer; font-size: .95rem;
+  }
+  .del-row:hover{ background: var(--owe-soft); color: var(--owe); }
+
+  .add-item-row td{ padding-top: .7rem; }
+
+  .import-status{
+    display:none; margin-top:.7rem; padding: .55rem .75rem; border-radius: 8px;
+    font-size: .85rem; border: 1px solid var(--line);
+  }
+  .import-status.show{ display:block; }
+  .import-status.ok{ background: var(--credit-soft); border-color: var(--credit); color: var(--ink); }
+  .import-status.err{ background: var(--owe-soft); border-color: var(--owe); color: var(--ink); }
+  .import-status.busy{ background: var(--paper-sunken); color: var(--ink-soft); }
+
+  .totals-table{ width:100%; border-collapse: collapse; margin-top: .6rem;}
+  .totals-table td{ padding: .35rem .2rem; }
+  .totals-table td:last-child{ text-align:right; }
+  .totals-table tr.grand td{ border-top: 1px solid var(--line-strong); font-weight:600; padding-top:.6rem; }
+
+  .settle-list{ display:flex; flex-direction:column; gap:.5rem; margin-top:.7rem; }
+  .settle-row{
+    display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: .55rem .8rem;
+  }
+  .settle-row .who{ display:flex; align-items:center; gap:.5rem; font-size:.9rem; }
+  .settle-row .arrow{ color: var(--ink-faint); }
+  .settle-row .amt{ font-weight:600; color: var(--owe); }
+  .settle-empty{ color: var(--ink-faint); font-size: .88rem; margin-top: .6rem; }
+
+  footer.note{
+    margin-top: 2rem; text-align:center; color: var(--ink-faint); font-size: .78rem;
+  }
+
+  .tabs{
+    display:flex; gap: .3rem; margin-top: 1.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .tab-btn{
+    font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+    background: transparent; border: none; color: var(--ink-faint);
+    padding: .6rem .9rem; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab-btn:hover{ color: var(--ink); }
+  .tab-btn.active{ color: var(--accent); border-bottom-color: var(--accent); }
+
+  .history-list{ display:flex; flex-direction:column; gap:.7rem; margin-top:.7rem; }
+  .history-empty{ color: var(--ink-faint); font-size: .9rem; }
+  .history-card{
+    background: var(--paper); border: 1px solid var(--line); border-radius: 10px;
+    padding: .8rem .9rem;
+  }
+  .history-card-head{
+    display:flex; justify-content:space-between; align-items:baseline; gap:.75rem; flex-wrap:wrap;
+  }
+  .history-card-head .label{ font-weight: 600; }
+  .history-card-head .when{ font-size: .78rem; color: var(--ink-faint); }
+  .history-people{ display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.55rem; }
+  .history-person{
+    display:flex; align-items:center; gap:.3rem; font-size: .78rem;
+    background: var(--paper-raised); border: 1px solid var(--line); border-radius: 999px; padding: .2rem .55rem;
+  }
+  .history-person .dot{ width:.45rem; height:.45rem; border-radius:50%; background: var(--pc); flex:none; }
+  .history-card-foot{ display:flex; justify-content: space-between; align-items:center; margin-top: .65rem; }
+  .history-total{ font-weight: 600; }
+  .history-actions{ display:flex; gap: .4rem; }
+
+  @media (max-width: 620px){
+    .toggles{ flex-wrap: wrap; max-width: 7rem; }
+    table.ledger thead{ display:none; }
+    table.ledger tbody tr{ display:flex; flex-direction:column; gap:.4rem; padding: .7rem .3rem; }
+    .row-actions{ order:-1; align-self:flex-end; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <h1>Warehouse Split</h1>
+    <div class="sub">Receipt: <input id="receiptLabel" value="Costco &middot; Christiana #246 &middot; Aug 30, 2026"></div>
+  </header>
+
+  <nav class="tabs" id="tabsNav">
+    <button class="tab-btn active" type="button" data-tab="split">Split</button>
+    <button class="tab-btn" type="button" data-tab="history">History</button>
+  </nav>
+
+  <div id="splitView">
+  <div class="summary">
+    <div class="wrap" style="padding:0;">
+      <div class="summary-row" id="summaryRow"></div>
+      <div class="warn-banner" id="warnBanner"></div>
+    </div>
+  </div>
+
+  <section class="card">
+    <div class="section-label">Who's splitting</div>
+    <div class="people-row" id="peopleRow"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-label">Trip details</div>
+    <div class="settings-grid">
+      <div class="field">
+        <label for="paidBySel">Paid on card by</label>
+        <select id="paidBySel"></select>
+      </div>
+      <div class="field">
+        <label for="taxInput">Tax on receipt</label>
+        <input type="number" id="taxInput" step="0.01" min="0" value="0.00">
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="ledger-head">
+      <div class="section-label" style="margin-bottom:0;">Items</div>
+      <div class="toolbar">
+        <button class="btn primary" id="uploadPdfBtn">Upload receipt PDF</button>
+        <input type="file" id="pdfInput" accept="application/pdf" style="display:none;">
+        <button class="btn" id="loadSampleBtn">Load Costco 8/30 receipt</button>
+        <button class="btn" id="clearItemsBtn">Clear all items</button>
+        <button class="btn" id="saveHistoryBtn">Save to history</button>
+      </div>
+    </div>
+    <div class="import-status" id="importStatus"></div>
+    <div style="overflow-x:auto;">
+      <table class="ledger">
+        <thead>
+          <tr>
+            <th style="width:1.6rem;"></th>
+            <th>Item</th>
+            <th style="width:6.5rem;">Price</th>
+            <th>Split between</th>
+            <th style="width:5.5rem;"></th>
+          </tr>
+        </thead>
+        <tbody id="itemsBody"></tbody>
+        <tfoot>
+          <tr class="add-item-row">
+            <td></td>
+            <td colspan="4"><button class="btn primary" id="addItemBtn">+ Add item</button></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-label">Totals</div>
+    <table class="totals-table" id="totalsTable"></table>
+  </section>
+
+  <section class="card" id="settleCard">
+    <div class="section-label">Settle up</div>
+    <div id="settleBody"></div>
+  </section>
+  </div>
+
+  <div id="historyView" hidden>
+    <section class="card">
+      <div class="ledger-head">
+        <div class="section-label" style="margin-bottom:0;">Saved receipts</div>
+        <button class="btn" id="clearHistoryBtn">Clear history</button>
+      </div>
+      <div class="history-list" id="historyList"></div>
+    </section>
+  </div>
+
+  <footer class="note">Saved automatically in this browser &middot; nothing leaves your device</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  if(window.pdfjsLib){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+  var STORAGE_KEY = "warehouseSplit_v1";
+  var PALETTE = ["p0","p1","p2","p3","p4","p5","p6","p7"];
+
+  var SAMPLE_ITEMS = [
+    {name:"Mini Wontons", price:7.49},
+    {name:"KS Water Gal (x2)", price:11.58},
+    {name:"Roti", price:4.59},
+    {name:"Greek Yogurt (x2)", price:14.98},
+    {name:"Doritos 3oz", price:7.29},
+    {name:"KS 5dz Eggs (x2)", price:18.78},
+    {name:"Kirkland Water 40pk (x2)", price:7.98},
+    {name:"Dosa Batter OG", price:8.89},
+    {name:"Carrot 6lb", price:5.99},
+    {name:"Pineapple", price:2.99},
+    {name:"Masoori Rice", price:18.39},
+    {name:"Cape Cod RF Chips", price:5.49},
+    {name:"Whole Milk (x2)", price:7.38},
+    {name:"Watermelon", price:4.99}
+  ];
+
+  function uid(){ return Math.random().toString(36).slice(2,9); }
+
+  function defaultState(){
+    var people = ["M","R","G","K","V"].map(function(initial,i){
+      return {id: uid(), initial: initial, color: PALETTE[i % PALETTE.length]};
+    });
+    var items = SAMPLE_ITEMS.map(function(it){
+      return {id: uid(), name: it.name, price: it.price, split: []};
+    });
+    return {
+      receiptLabel: "Costco \u00b7 Christiana #246 \u00b7 Aug 30, 2026",
+      people: people,
+      items: items,
+      paidBy: "",
+      tax: 0
+    };
+  }
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return defaultState();
+      var parsed = JSON.parse(raw);
+      if(!parsed || !Array.isArray(parsed.people) || !Array.isArray(parsed.items)) return defaultState();
+      return parsed;
+    }catch(e){ return defaultState(); }
+  }
+
+  function save(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+
+  var HISTORY_KEY = "warehouseSplit_history_v1";
+  var HISTORY_LIMIT = 20;
+
+  function loadHistory(){
+    try{
+      var raw = localStorage.getItem(HISTORY_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    }catch(e){ return []; }
+  }
+
+  function saveHistory(){
+    try{ localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); }catch(e){}
+  }
+
+  var state = load();
+  var history = loadHistory();
+
+  function fmt(cents){
+    var neg = cents < 0;
+    var v = Math.abs(cents) / 100;
+    return (neg ? "-$" : "$") + v.toFixed(2);
+  }
+
+  function nextColor(){
+    var used = state.people.map(function(p){return p.color;});
+    for(var i=0;i<PALETTE.length;i++){ if(used.indexOf(PALETTE[i])===-1) return PALETTE[i]; }
+    return PALETTE[state.people.length % PALETTE.length];
+  }
+
+  // ---------- computation ----------
+  function computeTotals(){
+    var byPerson = {};
+    state.people.forEach(function(p){ byPerson[p.id] = 0; });
+    var unassignedCount = 0;
+    var itemsTotalCents = 0;
+
+    state.items.forEach(function(item){
+      var priceCents = Math.round((Number(item.price) || 0) * 100);
+      itemsTotalCents += priceCents;
+      var members = item.split.filter(function(pid){ return byPerson.hasOwnProperty(pid); });
+      if(members.length === 0){ unassignedCount++; return; }
+      var base = Math.floor(priceCents / members.length);
+      var remainder = priceCents - base * members.length;
+      members.forEach(function(pid, idx){
+        var share = base + (idx === 0 ? remainder : 0);
+        byPerson[pid] += share;
+      });
+    });
+
+    var subtotalSum = 0;
+    state.people.forEach(function(p){ subtotalSum += byPerson[p.id]; });
+
+    var taxCents = Math.round((Number(state.tax) || 0) * 100);
+    var taxByPerson = {};
+    state.people.forEach(function(p){ taxByPerson[p.id] = 0; });
+    if(taxCents > 0 && subtotalSum > 0){
+      var raws = state.people.map(function(p){
+        var exact = taxCents * byPerson[p.id] / subtotalSum;
+        var floor = Math.floor(exact);
+        return {id: p.id, floor: floor, frac: exact - floor};
+      });
+      var assigned = 0;
+      raws.forEach(function(r){ taxByPerson[r.id] = r.floor; assigned += r.floor; });
+      var left = taxCents - assigned;
+      raws.sort(function(a,b){ return b.frac - a.frac; });
+      for(var i=0; i<left; i++){ taxByPerson[raws[i % raws.length].id] += 1; }
+    } else if (taxCents > 0) {
+      taxByPerson[state.people[0] && state.people[0].id] = taxCents;
+    }
+
+    var totals = {};
+    state.people.forEach(function(p){ totals[p.id] = byPerson[p.id] + taxByPerson[p.id]; });
+
+    return {
+      byPerson: totals,
+      subtotalByPerson: byPerson,
+      unassignedCount: unassignedCount,
+      itemsTotalCents: itemsTotalCents,
+      taxCents: taxCents,
+      grandTotalCents: itemsTotalCents + taxCents
+    };
+  }
+
+  // ---------- history ----------
+  function snapshotToHistory(){
+    if(state.items.length === 0) return;
+    var calc = computeTotals();
+    history.unshift({
+      id: uid(),
+      savedAt: Date.now(),
+      receiptLabel: state.receiptLabel,
+      people: JSON.parse(JSON.stringify(state.people)),
+      items: JSON.parse(JSON.stringify(state.items)),
+      paidBy: state.paidBy,
+      tax: state.tax,
+      totals: calc.byPerson,
+      grandTotalCents: calc.grandTotalCents
+    });
+    if(history.length > HISTORY_LIMIT) history = history.slice(0, HISTORY_LIMIT);
+    saveHistory();
+  }
+
+  function formatSavedAt(ts){
+    var d = new Date(ts);
+    if(isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) +
+      " at " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+
+  function renderHistory(){
+    var list = document.getElementById("historyList");
+    if(history.length === 0){
+      list.innerHTML = '<div class="history-empty">No saved receipts yet. Finish splitting one on the Split tab, then hit "Save to history" &mdash; or it saves automatically when you load a new receipt over an existing one.</div>';
+      return;
+    }
+    list.innerHTML = history.map(function(h){
+      var peopleHtml = h.people.map(function(p){
+        var cents = (h.totals && h.totals[p.id]) || 0;
+        return '<div class="history-person"><span class="dot" style="background:var(--'+p.color+')"></span>'+escapeHtml(p.initial)+' '+fmt(cents)+'</div>';
+      }).join("");
+      return '<div class="history-card" data-hid="'+h.id+'">' +
+        '<div class="history-card-head"><span class="label">'+escapeHtml(h.receiptLabel || "Untitled receipt")+'</span><span class="when">'+formatSavedAt(h.savedAt)+'</span></div>' +
+        '<div class="history-people">'+peopleHtml+'</div>' +
+        '<div class="history-card-foot"><span class="history-total money">'+fmt(h.grandTotalCents)+'</span>' +
+        '<div class="history-actions"><button class="btn restore-history-btn" data-hid="'+h.id+'">Restore</button><button class="btn ghost delete-history-btn" data-hid="'+h.id+'">Delete</button></div></div>' +
+        '</div>';
+    }).join("");
+  }
+
+  function restoreFromHistory(id){
+    var h = history.find(function(x){ return x.id === id; });
+    if(!h) return;
+    snapshotToHistory();
+    state.receiptLabel = h.receiptLabel;
+    state.people = JSON.parse(JSON.stringify(h.people));
+    state.items = JSON.parse(JSON.stringify(h.items));
+    state.paidBy = h.paidBy;
+    state.tax = h.tax;
+    renderAll();
+    setActiveTab("split");
+  }
+
+  function deleteFromHistory(id){
+    history = history.filter(function(x){ return x.id !== id; });
+    saveHistory();
+    renderHistory();
+  }
+
+  function setActiveTab(name){
+    document.querySelectorAll(".tab-btn").forEach(function(btn){
+      btn.classList.toggle("active", btn.dataset.tab === name);
+    });
+    document.getElementById("splitView").hidden = name !== "split";
+    document.getElementById("historyView").hidden = name !== "history";
+    if(name === "history") renderHistory();
+  }
+
+  // ---------- rendering ----------
+  function renderPeople(){
+    var row = document.getElementById("peopleRow");
+    row.innerHTML = "";
+    state.people.forEach(function(p){
+      var chip = document.createElement("div");
+      chip.className = "person-chip";
+      chip.innerHTML =
+        '<span class="swatch" style="background:var(--'+p.color+')"></span>' +
+        '<input maxlength="3" value="'+escapeAttr(p.initial)+'" data-pid="'+p.id+'" class="person-initial">' +
+        '<button type="button" data-pid="'+p.id+'" class="remove-person" title="Remove">&times;</button>';
+      row.appendChild(chip);
+    });
+    var addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "add-person";
+    addBtn.id = "addPersonBtn";
+    addBtn.textContent = "+ Add person";
+    row.appendChild(addBtn);
+  }
+
+  function renderPaidBySelect(){
+    var sel = document.getElementById("paidBySel");
+    var cur = state.paidBy;
+    sel.innerHTML = '<option value="">\u2014 none / skip settle-up \u2014</option>' +
+      state.people.map(function(p){
+        return '<option value="'+p.id+'"'+(p.id===cur?" selected":"")+'>'+escapeHtml(p.initial)+'</option>';
+      }).join("");
+    if(!state.people.some(function(p){return p.id===cur;})) sel.value = "";
+  }
+
+  function renderItems(){
+    var body = document.getElementById("itemsBody");
+    body.innerHTML = "";
+    state.items.forEach(function(item){
+      var tr = document.createElement("tr");
+      var isUnassigned = item.split.filter(function(pid){
+        return state.people.some(function(p){return p.id===pid;});
+      }).length === 0;
+      if(isUnassigned) tr.className = "unassigned";
+      tr.dataset.iid = item.id;
+
+      var togglesHtml = state.people.map(function(p){
+        var on = item.split.indexOf(p.id) !== -1;
+        return '<button type="button" class="toggle'+(on?" on":"")+'" style="--pc:var(--'+p.color+')" data-iid="'+item.id+'" data-pid="'+p.id+'" title="'+escapeAttr(p.initial)+'">'+escapeHtml(p.initial.slice(0,2))+'</button>';
+      }).join("");
+
+      var memberCount = item.split.filter(function(pid){return state.people.some(function(p){return p.id===pid;});}).length;
+      var priceNum = Number(item.price)||0;
+      var hint = memberCount > 0 ? ("\u00f7"+memberCount+" = "+fmt(Math.round(priceNum*100/memberCount))+" ea") : "pick who";
+
+      tr.innerHTML =
+        '<td><button type="button" class="del-row" data-iid="'+item.id+'" title="Remove item">&times;</button></td>' +
+        '<td class="item-name"><input type="text" value="'+escapeAttr(item.name)+'" data-iid="'+item.id+'" class="item-name-input"></td>' +
+        '<td><div class="item-price"><span>$</span><input type="number" step="0.01" min="0" value="'+priceNum.toFixed(2)+'" data-iid="'+item.id+'" class="item-price-input"></div></td>' +
+        '<td><div class="toggles">'+togglesHtml+'</div></td>' +
+        '<td><div class="row-actions"><button class="btn ghost all-btn" data-iid="'+item.id+'">all</button><button class="btn ghost none-btn" data-iid="'+item.id+'">none</button></div>' +
+        '<div class="share-hint">'+hint+'</div></td>';
+      body.appendChild(tr);
+    });
+  }
+
+  function renderSummaryAndTotals(){
+    var calc = computeTotals();
+
+    // sticky summary pills
+    var summaryRow = document.getElementById("summaryRow");
+    summaryRow.innerHTML = state.people.map(function(p){
+      return '<div class="pill" style="--pc:var(--'+p.color+')"><div class="who"><span class="dot"></span>'+escapeHtml(p.initial)+'</div><div class="amt money">'+fmt(calc.byPerson[p.id])+'</div></div>';
+    }).join("") + '<div class="pill grand"><div class="who">Total</div><div class="amt money">'+fmt(calc.grandTotalCents)+'</div></div>';
+
+    var warn = document.getElementById("warnBanner");
+    if(calc.unassignedCount > 0){
+      warn.className = "warn-banner show";
+      warn.textContent = calc.unassignedCount + " item" + (calc.unassignedCount>1?"s":"") + " not assigned to anyone yet \u2014 pick who's splitting them below.";
+    } else {
+      warn.className = "warn-banner";
+      warn.textContent = "";
+    }
+
+    // totals table
+    var tt = document.getElementById("totalsTable");
+    var rows = state.people.map(function(p){
+      return '<tr><td><span class="dot" style="display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--'+p.color+');margin-right:.4rem;"></span>'+escapeHtml(p.initial)+'</td><td class="money">'+fmt(calc.byPerson[p.id])+'</td></tr>';
+    }).join("");
+    tt.innerHTML = rows + '<tr class="grand"><td>Grand total</td><td class="money">'+fmt(calc.grandTotalCents)+'</td></tr>';
+
+    // settle up
+    var settleBody = document.getElementById("settleBody");
+    if(!state.paidBy || !state.people.some(function(p){return p.id===state.paidBy;})){
+      settleBody.innerHTML = '<div class="settle-empty">Pick who paid on their card above to see who owes whom.</div>';
+    } else {
+      var payer = state.people.find(function(p){return p.id===state.paidBy;});
+      var owers = state.people.filter(function(p){ return p.id !== payer.id && calc.byPerson[p.id] > 0; });
+      if(owers.length === 0){
+        settleBody.innerHTML = '<div class="settle-empty">Nobody owes '+escapeHtml(payer.initial)+' anything yet.</div>';
+      } else {
+        var collect = owers.reduce(function(s,p){return s+calc.byPerson[p.id];},0);
+        settleBody.innerHTML =
+          '<div class="settle-list">' +
+          owers.map(function(p){
+            return '<div class="settle-row"><div class="who"><span class="dot" style="width:.5rem;height:.5rem;border-radius:50%;background:var(--'+p.color+');display:inline-block;"></span>'+escapeHtml(p.initial)+' <span class="arrow">owes</span> '+escapeHtml(payer.initial)+'</div><div class="amt money">'+fmt(calc.byPerson[p.id])+'</div></div>';
+          }).join("") +
+          '</div>' +
+          '<div class="settle-empty" style="margin-top:.6rem;">'+escapeHtml(payer.initial)+' collects '+fmt(collect)+' total.</div>';
+      }
+    }
+  }
+
+  function renderAll(){
+    renderPeople();
+    renderPaidBySelect();
+    renderItems();
+    renderSummaryAndTotals();
+    document.getElementById("receiptLabel").value = state.receiptLabel;
+    document.getElementById("taxInput").value = (Number(state.tax)||0).toFixed(2);
+    save();
+  }
+
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function escapeAttr(s){ return escapeHtml(s); }
+
+  // ---------- Costco PDF import ----------
+  // Calibrated to the "Orders & Purchases" receipt PDF costco.com prints from
+  // myaccount/#/app/.../ordersandpurchases. Column x-ranges (PDF points) match
+  // that fixed-width layout: left flag/qty col, item-code col, description
+  // col, price col, tax-flag col.
+  function colOf(x){
+    if(x < 230) return "L";
+    if(x < 290) return "C";
+    if(x < 400) return "D";
+    if(x < 425) return "P";
+    return "T";
+  }
+
+  function groupRows(items){
+    var sorted = items.slice().sort(function(a,b){ return b.y - a.y || a.x - b.x; });
+    var rows = [];
+    var tol = 3;
+    sorted.forEach(function(it){
+      var row = rows.length ? rows[rows.length-1] : null;
+      if(row && Math.abs(row.y - it.y) <= tol){ row.items.push(it); }
+      else { rows.push({ y: it.y, items: [it] }); }
+    });
+    rows.forEach(function(r){ r.items.sort(function(a,b){ return a.x - b.x; }); });
+    return rows;
+  }
+
+  function parseCostcoRows(rows){
+    var anchors = [];
+    var strayDescRows = [];
+    var pendingQty = null;
+    var doneAt = rows.length;
+    var parsedTax = null, parsedTotal = null, storeLine = null, receiptDate = null;
+
+    for(var idx=0; idx<rows.length; idx++){
+      var items = rows[idx].items;
+      var y = rows[idx].y;
+      var descTok = items.filter(function(i){ return colOf(i.x)==="D"; }).map(function(i){ return i.str; }).join(" ").trim();
+
+      if(!storeLine && items.some(function(i){ return /#\d+/.test(i.str); })){
+        storeLine = items.map(function(i){ return i.str; }).join(" ").trim();
+      }
+      if(!receiptDate){
+        var dtTok = items.find(function(i){ return /^\d{2}\/\d{2}\/\d{4}$/.test(i.str); });
+        if(dtTok) receiptDate = dtTok.str;
+      }
+
+      if(idx >= doneAt){
+        var priceTok2 = items.find(function(i){ return colOf(i.x)==="P" && /^\d+\.\d{2}(\s|$)/.test(i.str); });
+        var up = descTok.toUpperCase();
+        if(priceTok2 && up === "TAX") parsedTax = parseFloat(priceTok2.str);
+        if(priceTok2 && up === "TOTAL") parsedTotal = parseFloat(priceTok2.str);
+        continue;
+      }
+
+      if(/^SUBTOTAL$/i.test(descTok)){ doneAt = idx; continue; }
+
+      var codeTok = items.find(function(i){ return colOf(i.x)==="C" && /^\d{1,8}$/.test(i.str); });
+      var priceTok = items.find(function(i){ return colOf(i.x)==="P" && /^\d+\.\d{2}(\s|$)/.test(i.str); });
+
+      if(codeTok && priceTok){
+        anchors.push({ rowIndex: idx, y: y, code: codeTok.str, price: parseFloat(priceTok.str), sameDesc: descTok, qty: pendingQty, discount: 0, before: [], after: [] });
+        pendingQty = null;
+        continue;
+      }
+
+      // discount reference row, e.g. code col "387167" + desc col "/ 638854" + price col "2.50-"
+      var negPriceTok = items.find(function(i){ return /^\d+\.\d{2}-$/.test(i.str); });
+      var slashTok = items.find(function(i){ return i.str.indexOf("/") !== -1; });
+      if(slashTok && negPriceTok){
+        var codeMatch = slashTok.str.match(/(\d+)/);
+        var targetCode = codeMatch ? codeMatch[1] : null;
+        var amt = parseFloat(negPriceTok.str);
+        if(targetCode){
+          for(var k=anchors.length-1; k>=0; k--){
+            if(anchors[k].code === targetCode){ anchors[k].discount += amt; break; }
+          }
+        }
+        continue;
+      }
+
+      var lineText = items.map(function(i){ return i.str; }).join(" ").trim();
+      var qtyMatch = lineText.match(/^(\d+)\s*@\s*(\d+\.\d{2})$/);
+      if(qtyMatch){ pendingQty = { n: parseInt(qtyMatch[1],10), unit: parseFloat(qtyMatch[2]) }; continue; }
+
+      if(descTok){ strayDescRows.push({ rowIndex: idx, y: y, text: descTok }); }
+    }
+
+    strayDescRows.forEach(function(s){
+      if(anchors.length === 0) return;
+      var prevA = null, nextA = null;
+      for(var i=0;i<anchors.length;i++){
+        if(anchors[i].rowIndex < s.rowIndex) prevA = anchors[i];
+        if(anchors[i].rowIndex > s.rowIndex && !nextA) nextA = anchors[i];
+      }
+      if(!prevA) return; // text above the very first item is page header junk, discard
+      var target = nextA ? (Math.abs(prevA.y - s.y) <= Math.abs(nextA.y - s.y) ? prevA : nextA) : prevA;
+      if(s.rowIndex < target.rowIndex) target.before.push(s); else target.after.push(s);
+    });
+
+    var items = anchors.map(function(a){
+      a.before.sort(function(x,y2){ return x.rowIndex - y2.rowIndex; });
+      a.after.sort(function(x,y2){ return x.rowIndex - y2.rowIndex; });
+      var nameParts = a.before.map(function(s){ return s.text; });
+      if(a.sameDesc) nameParts.push(a.sameDesc);
+      a.after.forEach(function(s){ nameParts.push(s.text); });
+      var name = nameParts.join(" ").replace(/\s+/g," ").replace(/^\*+\s*/,"").trim();
+      if(a.qty && a.qty.n > 1) name += " (x" + a.qty.n + ")";
+      var netPrice = Math.max(0, a.price - (a.discount||0));
+      return { name: name || ("Item " + a.code), price: Math.round(netPrice*100)/100 };
+    });
+
+    return { items: items, tax: parsedTax, total: parsedTotal, store: storeLine, date: receiptDate };
+  }
+
+  function showImportStatus(kind, msg){
+    var el = document.getElementById("importStatus");
+    el.className = "import-status show " + kind;
+    el.textContent = msg;
+  }
+
+  function handlePdfFile(file){
+    if(!window.pdfjsLib){
+      showImportStatus("err", "PDF reader failed to load (no internet access to cdnjs.cloudflare.com?). Add items manually below instead.");
+      return;
+    }
+    showImportStatus("busy", "Reading " + file.name + "...");
+    file.arrayBuffer().then(function(buf){
+      return pdfjsLib.getDocument({ data: buf }).promise;
+    }).then(function(pdf){
+      var pageCount = Math.min(pdf.numPages, 3);
+      var pagePromises = [];
+      for(var p=1; p<=pageCount; p++){ pagePromises.push(pdf.getPage(p)); }
+      return Promise.all(pagePromises);
+    }).then(function(pages){
+      return Promise.all(pages.map(function(page){ return page.getTextContent(); }));
+    }).then(function(contents){
+      var allRows = [];
+      contents.forEach(function(content){
+        var items = content.items.map(function(it){
+          return { str: (it.str||"").trim(), x: it.transform[4], y: it.transform[5] };
+        }).filter(function(it){ return it.str.length > 0; });
+        allRows = allRows.concat(groupRows(items));
+      });
+      var parsed = parseCostcoRows(allRows);
+      if(parsed.items.length === 0){
+        showImportStatus("err", "Couldn't find any line items in this PDF - it may not match the Costco receipt layout this reads. Add items manually below.");
+        return;
+      }
+      snapshotToHistory();
+      state.items = parsed.items.map(function(it){ return { id: uid(), name: it.name, price: it.price, split: [] }; });
+      if(parsed.store || parsed.date){
+        state.receiptLabel = [parsed.store, parsed.date].filter(Boolean).join(" \u00b7 ");
+      }
+      state.tax = parsed.tax || 0;
+      renderAll();
+
+      var sum = parsed.items.reduce(function(s,it){ return s + it.price; }, 0) + (parsed.tax||0);
+      var sumCents = Math.round(sum*100);
+      if(parsed.total != null){
+        var totalCents = Math.round(parsed.total*100);
+        if(Math.abs(sumCents - totalCents) <= 1){
+          showImportStatus("ok", "Imported " + parsed.items.length + " items - $" + sum.toFixed(2) + " matches the receipt total. Now assign who's splitting each item below.");
+        } else {
+          showImportStatus("err", "Imported " + parsed.items.length + " items totaling $" + sum.toFixed(2) + ", but the receipt says $" + parsed.total.toFixed(2) + " - please review the items below for anything missed or misread.");
+        }
+      } else {
+        showImportStatus("ok", "Imported " + parsed.items.length + " items - $" + sum.toFixed(2) + " total. Review below, then assign who's splitting each item.");
+      }
+    }).catch(function(err){
+      showImportStatus("err", "Couldn't read that PDF (" + (err && err.message ? err.message : "unknown error") + "). Add items manually below instead.");
+    });
+  }
+
+  // ---------- events ----------
+  document.getElementById("uploadPdfBtn").addEventListener("click", function(){
+    document.getElementById("pdfInput").click();
+  });
+  document.getElementById("pdfInput").addEventListener("change", function(e){
+    var file = e.target.files && e.target.files[0];
+    if(file) handlePdfFile(file);
+    e.target.value = "";
+  });
+  document.getElementById("receiptLabel").addEventListener("input", function(e){
+    state.receiptLabel = e.target.value; save();
+  });
+  document.getElementById("taxInput").addEventListener("input", function(e){
+    state.tax = parseFloat(e.target.value) || 0; renderSummaryAndTotals(); save();
+  });
+  document.getElementById("paidBySel").addEventListener("change", function(e){
+    state.paidBy = e.target.value; renderSummaryAndTotals(); save();
+  });
+  document.getElementById("addItemBtn").addEventListener("click", function(){
+    state.items.push({id: uid(), name: "", price: 0, split: []});
+    renderItems(); renderSummaryAndTotals(); save();
+    var inputs = document.querySelectorAll(".item-name-input");
+    if(inputs.length) inputs[inputs.length-1].focus();
+  });
+  document.getElementById("loadSampleBtn").addEventListener("click", function(){
+    snapshotToHistory();
+    state.items = SAMPLE_ITEMS.map(function(it){ return {id: uid(), name: it.name, price: it.price, split: []}; });
+    state.receiptLabel = "Costco \u00b7 Christiana #246 \u00b7 Aug 30, 2026";
+    state.tax = 0;
+    renderAll();
+  });
+  document.getElementById("clearItemsBtn").addEventListener("click", function(){
+    state.items = [];
+    renderItems(); renderSummaryAndTotals(); save();
+  });
+  document.getElementById("saveHistoryBtn").addEventListener("click", function(){
+    if(state.items.length === 0){
+      showImportStatus("err", "Nothing to save yet - add or import some items first.");
+      return;
+    }
+    snapshotToHistory();
+    showImportStatus("ok", "Saved this receipt to history.");
+  });
+  document.getElementById("clearHistoryBtn").addEventListener("click", function(){
+    if(history.length === 0) return;
+    if(!confirm("Delete all saved receipts from history? This can't be undone.")) return;
+    history = [];
+    saveHistory();
+    renderHistory();
+  });
+  document.getElementById("historyList").addEventListener("click", function(e){
+    var restoreBtn = e.target.closest(".restore-history-btn");
+    if(restoreBtn){ restoreFromHistory(restoreBtn.dataset.hid); return; }
+    var delBtn = e.target.closest(".delete-history-btn");
+    if(delBtn){
+      if(confirm("Delete this saved receipt?")) deleteFromHistory(delBtn.dataset.hid);
+    }
+  });
+  document.getElementById("tabsNav").addEventListener("click", function(e){
+    var btn = e.target.closest(".tab-btn");
+    if(btn) setActiveTab(btn.dataset.tab);
+  });
+
+  document.getElementById("peopleRow").addEventListener("click", function(e){
+    var addBtn = e.target.closest("#addPersonBtn");
+    if(addBtn){
+      state.people.push({id: uid(), initial: "?", color: nextColor()});
+      renderAll();
+      return;
+    }
+    var rm = e.target.closest(".remove-person");
+    if(rm){
+      var pid = rm.dataset.pid;
+      if(state.people.length <= 1) return;
+      state.people = state.people.filter(function(p){ return p.id !== pid; });
+      state.items.forEach(function(it){ it.split = it.split.filter(function(id){return id!==pid;}); });
+      if(state.paidBy === pid) state.paidBy = "";
+      renderAll();
+    }
+  });
+  document.getElementById("peopleRow").addEventListener("input", function(e){
+    if(e.target.classList.contains("person-initial")){
+      var p = state.people.find(function(p){ return p.id === e.target.dataset.pid; });
+      if(p){ p.initial = e.target.value.trim() || "?"; renderPaidBySelect(); renderItems(); renderSummaryAndTotals(); save(); }
+    }
+  });
+
+  document.getElementById("itemsBody").addEventListener("input", function(e){
+    var iid = e.target.dataset.iid;
+    var item = state.items.find(function(it){ return it.id === iid; });
+    if(!item) return;
+    if(e.target.classList.contains("item-name-input")){
+      item.name = e.target.value; save();
+    } else if(e.target.classList.contains("item-price-input")){
+      item.price = parseFloat(e.target.value) || 0;
+      renderItems(); renderSummaryAndTotals(); save();
+      var el = document.querySelector('.item-price-input[data-iid="'+iid+'"]');
+      if(el) { el.focus(); }
+    }
+  });
+
+  document.getElementById("itemsBody").addEventListener("click", function(e){
+    var toggle = e.target.closest(".toggle");
+    if(toggle){
+      var iid = toggle.dataset.iid, pid = toggle.dataset.pid;
+      var item = state.items.find(function(it){ return it.id === iid; });
+      var idx = item.split.indexOf(pid);
+      if(idx === -1) item.split.push(pid); else item.split.splice(idx,1);
+      renderItems(); renderSummaryAndTotals(); save();
+      return;
+    }
+    var allBtn = e.target.closest(".all-btn");
+    if(allBtn){
+      var item2 = state.items.find(function(it){ return it.id === allBtn.dataset.iid; });
+      item2.split = state.people.map(function(p){ return p.id; });
+      renderItems(); renderSummaryAndTotals(); save();
+      return;
+    }
+    var noneBtn = e.target.closest(".none-btn");
+    if(noneBtn){
+      var item3 = state.items.find(function(it){ return it.id === noneBtn.dataset.iid; });
+      item3.split = [];
+      renderItems(); renderSummaryAndTotals(); save();
+      return;
+    }
+    var del = e.target.closest(".del-row");
+    if(del){
+      state.items = state.items.filter(function(it){ return it.id !== del.dataset.iid; });
+      renderItems(); renderSummaryAndTotals(); save();
+    }
+  });
+
+  renderAll();
+})();
+</script>
