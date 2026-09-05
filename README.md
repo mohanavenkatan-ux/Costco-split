@@ -1,62 +1,59 @@
 # Warehouse Split
 
-A single-page tool for splitting a warehouse-store receipt among roommates,
-with live per-person totals and a settle-up view.
+Split a warehouse-store receipt (Costco, Sam's Club, BJ's...) with your
+roommates or friends, and see exactly who owes who.
 
-**Live app:** https://mohanavenkatan-ux.github.io/Costco-split/
+No account, no install, no sign-up. It runs entirely in your web browser and
+never sends your data anywhere.
 
-Or open [`index.html`](index.html) directly in a browser — no build, no
-server, no dependencies to install.
+## Get the app
 
-## Features
+**Option A - use it online (easiest):**
+https://mohanavenkatan-ux.github.io/Costco-split/
 
-- **Upload a receipt PDF.** Drop in the PDF that costco.com/myaccount prints
-  from Orders & Purchases and it reads the items, prices, instant-savings
-  discounts, tax, store, and date directly in your browser (via pdf.js —
-  nothing is uploaded anywhere). It cross-checks the extracted total against
-  the receipt's printed total and flags anything that doesn't reconcile.
-- **Assign who splits what, live.** Click the initials on any item to toggle
-  who's in on it — solo, two-way, or everyone. Totals update as you click.
-  Odd-cent remainders round to the cent so every item's shares always add up
-  exactly. Press 1-9 while a toggle is focused to do the same from the
-  keyboard, and press Enter in a name/price field to add a new row.
-- **Tax**, if the receipt has any, splits proportionally to each person's
-  share of the subtotal.
-- **Settle up.** Pick who paid on their card and it tells you exactly who
-  owes that person how much, and the total they should collect. "Copy
-  summary" formats the whole thing as text ready to paste into a group chat.
-- **History tab.** Save a finished split, or just load a new receipt over an
-  existing one — the one you're replacing is snapshotted automatically.
-  Revisit or restore any saved receipt. "Repeat last trip's split" reapplies
-  the last saved receipt's assignments to matching item names, so a
-  recurring shopping run doesn't need reassigning from scratch.
-- **Config tab.** Rename the people you split with and pick a currency
-  symbol, used everywhere an amount is shown.
-- **Installable.** The hosted version can be added to your phone's home
-  screen and keeps working offline after the first load.
-- Everything is stored in your browser's local storage. Nothing leaves your
-  device.
+**Option B - download it to use offline:**
+1. Go to: https://github.com/mohanavenkatan-ux/Costco-split/blob/master/index.html
+2. Click the **download icon** (a downward arrow, near the top-right of the
+   page, next to the "Raw" button).
+3. Find the downloaded file (usually in your **Downloads** folder) and
+   double-click it. It opens in your web browser like any webpage.
+4. You can move that file anywhere - your Desktop, a USB drive, etc. - and
+   it'll keep working. It's just one file.
 
-## Usage
+## How to use it
 
-1. Open the [live app](https://mohanavenkatan-ux.github.io/Costco-split/) or
-   `index.html`.
-2. In the Config tab, set up the people you're splitting with and your
-   currency.
-3. Upload a receipt PDF, or add items by hand.
-4. Click the initials on each item to say who's splitting it.
-5. Pick who paid on their card to see the settle-up breakdown, and copy it
-   to share.
-6. Save the split to History when you're done, or just move on to the next
-   receipt — it's saved for you automatically.
+1. **Set up your group.** Open the **Config** tab. Rename the five initials
+   to match your group (or add/remove people), and pick your currency.
+2. **Add a receipt.** On the **Split** tab, either:
+   - Click **Upload receipt PDF** and pick a saved Costco receipt PDF, or
+   - Click **Load sample receipt** to try it out with fake data, or
+   - Click **+ Add item** to type items in by hand.
+3. **Say who's splitting what.** Every item has a small circle for each
+   person. Click a circle to include that person in that item - click "all"
+   for something everyone's splitting, or leave just one person clicked for
+   something only they're paying for.
+4. **Check the totals.** The numbers at the top of the page update live as
+   you click, showing exactly what each person owes.
+5. **Settle up.** Pick who actually paid on their card, and the app tells
+   you who owes that person how much. Click **Copy summary** to copy a
+   ready-to-paste message for your group chat.
+6. **Save it for later.** Click **Save to history** to keep a record. The
+   **History** tab lets you look back at past trips or restore one.
 
-## Notes
+Everything you enter is saved automatically in your browser only - closing
+the tab won't lose your work, but it also isn't backed up anywhere or
+shared between your devices.
 
-- The PDF parser is calibrated to the specific layout Costco's
-  "Orders & Purchases" page prints to PDF. A different store or a scanned/
-  photographed receipt won't parse — add items by hand instead.
-- This is a static site with no backend. Your data stays in your browser's
-  local storage; it isn't synced anywhere, including between devices.
-- The offline service worker only activates when served over HTTPS (as the
-  live GitHub Pages site is) — it won't register if you open `index.html`
-  as a local file.
+## Something not working?
+
+The receipt PDF importer is built specifically for the PDF that
+costco.com/myaccount prints from "Orders & Purchases" - other stores or a
+photographed receipt won't read correctly. You can always add items by hand
+instead.
+
+## Want to see how this was built, or help improve it?
+
+This branch (`master`) is just the ready-to-use app for people who want to
+use it, not develop it. The source code, development history, and
+contribution workflow live on the
+[`main` branch](https://github.com/mohanavenkatan-ux/Costco-split/tree/main).
