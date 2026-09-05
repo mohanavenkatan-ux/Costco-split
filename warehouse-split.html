@@ -313,6 +313,18 @@
   .history-total{ font-weight: 600; }
   .history-actions{ display:flex; gap: .4rem; }
 
+  .toast{
+    position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%);
+    background: var(--ink); color: var(--paper);
+    border-radius: 10px; padding: .65rem .7rem .65rem 1rem;
+    display:flex; align-items:center; gap: .9rem;
+    box-shadow: 0 4px 16px var(--shadow);
+    font-size: .88rem; z-index: 20;
+  }
+  .toast[hidden]{ display:none; }
+  .toast .btn{ background: transparent; border-color: var(--paper); color: var(--paper); }
+  .toast .btn:hover{ background: var(--paper); color: var(--ink); }
+
   @media (max-width: 620px){
     .toggles{ flex-wrap: wrap; max-width: 7rem; }
     table.ledger thead{ display:none; }
@@ -439,6 +451,11 @@
   </div>
 
   <footer class="note">Saved automatically in this browser &middot; nothing leaves your device</footer>
+
+  <div class="toast" id="undoToast" hidden>
+    <span id="undoToastMsg"></span>
+    <button class="btn" id="undoToastBtn" type="button">Undo</button>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -703,9 +720,10 @@
       if(isUnassigned) tr.className = "unassigned";
       tr.dataset.iid = item.id;
 
-      var togglesHtml = state.people.map(function(p){
+      var togglesHtml = state.people.map(function(p, pIdx){
         var on = item.split.indexOf(p.id) !== -1;
-        return '<button type="button" class="toggle'+(on?" on":"")+'" style="--pc:var(--'+p.color+')" data-iid="'+item.id+'" data-pid="'+p.id+'" title="'+escapeAttr(p.initial)+'">'+escapeHtml(p.initial.slice(0,2))+'</button>';
+        var hint = pIdx < 9 ? (" (press " + (pIdx+1) + ")") : "";
+        return '<button type="button" class="toggle'+(on?" on":"")+'" style="--pc:var(--'+p.color+')" data-iid="'+item.id+'" data-pid="'+p.id+'" title="'+escapeAttr(p.initial)+hint+'">'+escapeHtml(p.initial.slice(0,2))+'</button>';
       }).join("");
 
       var memberCount = item.split.filter(function(pid){return state.people.some(function(p){return p.id===pid;});}).length;
@@ -717,7 +735,7 @@
         '<td class="item-name"><input type="text" value="'+escapeAttr(item.name)+'" data-iid="'+item.id+'" class="item-name-input"></td>' +
         '<td><div class="item-price"><span>'+escapeHtml(state.currency||"$")+'</span><input type="number" step="0.01" min="0" value="'+priceNum.toFixed(2)+'" data-iid="'+item.id+'" class="item-price-input"></div></td>' +
         '<td><div class="toggles">'+togglesHtml+'</div></td>' +
-        '<td><div class="row-actions"><button class="btn ghost all-btn" data-iid="'+item.id+'">all</button><button class="btn ghost none-btn" data-iid="'+item.id+'">none</button></div>' +
+        '<td><div class="row-actions"><button class="btn ghost all-btn" data-iid="'+item.id+'">all</button><button class="btn ghost none-btn" data-iid="'+item.id+'">none</button><button class="btn ghost dup-row" data-iid="'+item.id+'" title="Duplicate item">dup</button></div>' +
         '<div class="share-hint">'+hint+'</div></td>';
       body.appendChild(tr);
     });
@@ -952,6 +970,30 @@
     el.textContent = msg;
   }
 
+  var undoTimer = null;
+  var pendingUndo = null;
+
+  function hideUndoToast(){
+    document.getElementById("undoToast").hidden = true;
+    pendingUndo = null;
+    if(undoTimer){ clearTimeout(undoTimer); undoTimer = null; }
+  }
+
+  function showUndoToast(message, restoreFn){
+    if(undoTimer) clearTimeout(undoTimer);
+    pendingUndo = restoreFn;
+    document.getElementById("undoToastMsg").textContent = message;
+    document.getElementById("undoToast").hidden = false;
+    undoTimer = setTimeout(hideUndoToast, 6000);
+  }
+
+  function refocusToggle(iid, personIndex){
+    var row = document.querySelector('tr[data-iid="'+iid+'"]');
+    if(!row) return;
+    var toggles = row.querySelectorAll(".toggle");
+    if(toggles[personIndex]) toggles[personIndex].focus();
+  }
+
   function handlePdfFile(file){
     if(!window.pdfjsLib){
       showImportStatus("err", "PDF reader failed to load (no internet access to cdnjs.cloudflare.com?). Add items manually below instead.");
@@ -1144,11 +1186,54 @@
       renderItems(); renderSummaryAndTotals(); save();
       return;
     }
+    var dup = e.target.closest(".dup-row");
+    if(dup){
+      var srcIdx = state.items.findIndex(function(it){ return it.id === dup.dataset.iid; });
+      if(srcIdx !== -1){
+        var src = state.items[srcIdx];
+        var copy = { id: uid(), name: src.name, price: src.price, split: src.split.slice() };
+        state.items.splice(srcIdx + 1, 0, copy);
+        renderItems(); renderSummaryAndTotals(); save();
+      }
+      return;
+    }
     var del = e.target.closest(".del-row");
     if(del){
-      state.items = state.items.filter(function(it){ return it.id !== del.dataset.iid; });
+      var delIdx = state.items.findIndex(function(it){ return it.id === del.dataset.iid; });
+      if(delIdx === -1) return;
+      var removed = state.items[delIdx];
+      state.items.splice(delIdx, 1);
       renderItems(); renderSummaryAndTotals(); save();
+      showUndoToast('Removed "' + (removed.name || "item") + '"', function(){
+        state.items.splice(delIdx, 0, removed);
+        renderItems(); renderSummaryAndTotals(); save();
+      });
     }
+  });
+
+  document.getElementById("itemsBody").addEventListener("keydown", function(e){
+    if(e.target.classList.contains("toggle") && e.key >= "1" && e.key <= "9"){
+      var idx = Number(e.key) - 1;
+      if(idx < state.people.length){
+        e.preventDefault();
+        var iid = e.target.dataset.iid;
+        var pid = state.people[idx].id;
+        var item = state.items.find(function(it){ return it.id === iid; });
+        var pos = item.split.indexOf(pid);
+        if(pos === -1) item.split.push(pid); else item.split.splice(pos, 1);
+        renderItems(); renderSummaryAndTotals(); save();
+        refocusToggle(iid, idx);
+      }
+      return;
+    }
+    if(e.key === "Enter" && (e.target.classList.contains("item-name-input") || e.target.classList.contains("item-price-input"))){
+      e.preventDefault();
+      document.getElementById("addItemBtn").click();
+    }
+  });
+
+  document.getElementById("undoToastBtn").addEventListener("click", function(){
+    if(pendingUndo){ var fn = pendingUndo; hideUndoToast(); fn(); }
   });
 
   renderAll();
