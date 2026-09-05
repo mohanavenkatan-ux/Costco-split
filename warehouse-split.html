@@ -390,7 +390,10 @@
   </section>
 
   <section class="card" id="settleCard">
-    <div class="section-label">Settle up</div>
+    <div class="ledger-head">
+      <div class="section-label" style="margin-bottom:0;">Settle up</div>
+      <button class="btn" id="copySummaryBtn">Copy summary</button>
+    </div>
     <div id="settleBody"></div>
   </section>
   </div>
@@ -715,6 +718,54 @@
     });
   }
 
+  function buildSummaryText(){
+    var calc = computeTotals();
+    var lines = [];
+    lines.push(state.receiptLabel || "Receipt split");
+    lines.push("Total: " + fmt(calc.grandTotalCents));
+    lines.push("");
+    state.people.forEach(function(p){
+      lines.push(p.initial + ": " + fmt(calc.byPerson[p.id]));
+    });
+    var payer = state.people.find(function(p){ return p.id === state.paidBy; });
+    if(payer){
+      var owers = state.people.filter(function(p){ return p.id !== payer.id && calc.byPerson[p.id] > 0; });
+      lines.push("");
+      if(owers.length === 0){
+        lines.push("Nobody owes " + payer.initial + " anything.");
+      } else {
+        lines.push("Paid by " + payer.initial + " - settle up:");
+        owers.forEach(function(p){
+          lines.push(p.initial + " owes " + payer.initial + " " + fmt(calc.byPerson[p.id]));
+        });
+      }
+    }
+    return lines.join("\n");
+  }
+
+  function copyTextToClipboard(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function(resolve, reject){
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try{
+        var ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        ok ? resolve() : reject(new Error("execCommand failed"));
+      }catch(e){
+        document.body.removeChild(ta);
+        reject(e);
+      }
+    });
+  }
+
   function renderSummaryAndTotals(){
     var calc = computeTotals();
 
@@ -994,6 +1045,17 @@
     }
     snapshotToHistory();
     showImportStatus("ok", "Saved this receipt to history.");
+  });
+  document.getElementById("copySummaryBtn").addEventListener("click", function(){
+    var btn = document.getElementById("copySummaryBtn");
+    var text = buildSummaryText();
+    copyTextToClipboard(text).then(function(){
+      var original = btn.textContent;
+      btn.textContent = "Copied!";
+      setTimeout(function(){ btn.textContent = original; }, 1500);
+    }).catch(function(){
+      window.prompt("Copy this manually:", text);
+    });
   });
   document.getElementById("clearHistoryBtn").addEventListener("click", function(){
     if(history.length === 0) return;
