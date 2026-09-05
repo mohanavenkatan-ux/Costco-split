@@ -1,0 +1,68 @@
+name: Sync master with main
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Build sync branch from master
+        run: |
+          git fetch origin master main
+          git checkout -B sync/main-to-master origin/master
+
+      - name: Merge main, keeping master's own README
+        id: merge
+        run: |
+          set -e
+          git merge --no-commit --no-ff origin/main || true
+          git checkout origin/master -- README.md
+          git add README.md
+          remaining=$(git diff --name-only --diff-filter=U)
+          if [ -n "$remaining" ]; then
+            echo "Unexpected merge conflicts outside README.md, aborting:"
+            echo "$remaining"
+            git merge --abort
+            exit 1
+          fi
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Sync latest build from main" -m "Automated sync via GitHub Actions. README.md is kept as master's own end-user guide, not overwritten by main's."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push sync branch
+        if: steps.merge.outputs.changed == 'true'
+        run: git push --force origin sync/main-to-master
+
+      - name: Open and merge PR into master
+        if: steps.merge.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          if ! gh pr view sync/main-to-master --json number >/dev/null 2>&1; then
+            gh pr create --base master --head sync/main-to-master \
+              --title "Sync latest build from main" \
+              --body "Automated sync of app files from main. README.md is preserved as master's own end-user guide and is never overwritten by this workflow."
+          fi
+          gh pr merge sync/main-to-master --merge --delete-branch
