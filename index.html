@@ -364,6 +364,13 @@
         <label for="taxInput">Tax on receipt</label>
         <input type="number" id="taxInput" step="0.01" min="0" value="0.00">
       </div>
+      <div class="field">
+        <label for="taxSplitSel">Split tax</label>
+        <select id="taxSplitSel">
+          <option value="proportional">Proportional to what each person spent</option>
+          <option value="equal">Equally among participants</option>
+        </select>
+      </div>
     </div>
   </section>
 
@@ -501,7 +508,8 @@
       items: items,
       paidBy: "",
       tax: 0,
-      currency: "$"
+      currency: "$",
+      taxSplitMode: "proportional"
     };
   }
 
@@ -576,7 +584,19 @@
     var taxCents = Math.round((Number(state.tax) || 0) * 100);
     var taxByPerson = {};
     state.people.forEach(function(p){ taxByPerson[p.id] = 0; });
-    if(taxCents > 0 && subtotalSum > 0){
+    var taxSplitMode = state.taxSplitMode === "equal" ? "equal" : "proportional";
+
+    if(taxCents > 0 && taxSplitMode === "equal"){
+      var participants = state.people.filter(function(p){ return byPerson[p.id] > 0; });
+      if(participants.length === 0) participants = state.people.slice();
+      if(participants.length > 0){
+        var eqBase = Math.floor(taxCents / participants.length);
+        var eqRemainder = taxCents - eqBase * participants.length;
+        participants.forEach(function(p, idx){
+          taxByPerson[p.id] = eqBase + (idx < eqRemainder ? 1 : 0);
+        });
+      }
+    } else if(taxCents > 0 && subtotalSum > 0){
       var raws = state.people.map(function(p){
         var exact = taxCents * byPerson[p.id] / subtotalSum;
         var floor = Math.floor(exact);
@@ -880,6 +900,7 @@
     document.getElementById("receiptLabel").value = state.receiptLabel;
     document.getElementById("taxInput").value = (Number(state.tax)||0).toFixed(2);
     document.getElementById("currencySel").value = state.currency || "$";
+    document.getElementById("taxSplitSel").value = state.taxSplitMode === "equal" ? "equal" : "proportional";
     save();
   }
 
@@ -1097,6 +1118,10 @@
   });
   document.getElementById("taxInput").addEventListener("input", function(e){
     state.tax = parseFloat(e.target.value) || 0; renderSummaryAndTotals(); save();
+  });
+  document.getElementById("taxSplitSel").addEventListener("change", function(e){
+    state.taxSplitMode = e.target.value === "equal" ? "equal" : "proportional";
+    renderSummaryAndTotals(); save();
   });
   document.getElementById("currencySel").addEventListener("change", function(e){
     state.currency = e.target.value; renderItems(); renderSummaryAndTotals(); save();
