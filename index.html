@@ -545,6 +545,26 @@
   var state = load();
   var history = loadHistory();
 
+  // Lets another app (e.g. roommate-ledger) open this pre-filled with its
+  // group's member names via ?people=Name1,Name2,... - applied once, then
+  // the param is stripped from the URL so a later refresh doesn't silently
+  // reset whatever splitting work is already in progress.
+  (function applyPeopleFromUrl(){
+    var params = new URLSearchParams(location.search);
+    var raw = params.get("people");
+    if(!raw) return;
+    var names = raw.split(",").map(function(n){ return n.trim(); }).filter(Boolean);
+    if(names.length === 0) return;
+    state.people = names.map(function(name, i){
+      return { id: uid(), initial: name, color: PALETTE[i % PALETTE.length] };
+    });
+    state.paidBy = "";
+    save();
+    params.delete("people");
+    var qs = params.toString();
+    window.history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+  })();
+
   function fmt(cents){
     var neg = cents < 0;
     var v = Math.abs(cents) / 100;
